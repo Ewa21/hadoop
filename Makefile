@@ -9,7 +9,7 @@
 HADOOP_CLASSPATH := ${JAVA_HOME}/lib/tools.jar
 export HADOOP_CLASSPATH
 
-HDFS=user/adampap/psso
+HDFS=user/lada04/bigdata
 
 OBJDIR=build
 
@@ -24,21 +24,21 @@ final: $(TARGETS)
 runA: $(OBJDIR)/TitleCount.class
 	jar -cvf $(JAR) -C $(OBJDIR)/ ./
 	hdfs dfs -rm -r -skipTrash -f /$(HDFS)/A-output/
-	hadoop jar $(JAR) TitleCount -D stopwords=/$(HDFS)/misc/stopwords.txt -D delimiters=/$(HDFS)/misc/delimiters.txt /$(HDFS)/titles /$(HDFS)/A-output
+	hadoop jar $(JAR) TitleCount -D stopwords=/$(HDFS)/misc/stopwords.txt -D delimiters=/$(HDFS)/misc/delimiters.txt /user/adampap/psso/titles /$(HDFS)/A-output
 	@echo "Run the following command to read the output file:"
 	@echo "hdfs dfs -cat /$(HDFS)/A-output/part*"
 
 runB: $(OBJDIR)/TopTitles.class
 	jar -cvf $(JAR) -C $(OBJDIR)/ ./
 	hdfs dfs -rm -r -skipTrash -f /$(HDFS)/B-output/
-	hadoop jar $(JAR) TopTitles -D stopwords=/$(HDFS)/misc/stopwords.txt -D delimiters=/$(HDFS)/misc/delimiters.txt -D N=5 -D tmpPath=/$(HDFS)/temp /$(HDFS)/titles /$(HDFS)/B-output
+	hadoop jar $(JAR) TopTitles -D stopwords=/$(HDFS)/misc/stopwords.txt -D delimiters=/$(HDFS)/misc/delimiters.txt -D N=5 -D tmpPath=/$(HDFS)/temp  /user/adampap/psso/titles /$(HDFS)/B-output
 	@echo "Run the following command to read the output file:"
 	@echo "hdfs dfs -cat /$(HDFS)/B-output/part*"
 
 runC: $(OBJDIR)/TopTitleStatistics.class
 	jar -cvf $(JAR) -C $(OBJDIR)/ ./
 	hdfs dfs -rm -r -skipTrash -f /$(HDFS)/C-output/
-	hadoop jar $(JAR) TopTitleStatistics -D stopwords=/$(HDFS)/misc/stopwords.txt -D delimiters=/$(HDFS)/misc/delimiters.txt -D N=5 /$(HDFS)/titles /$(HDFS)/C-output
+	hadoop jar $(JAR) TopTitleStatistics -D stopwords=/$(HDFS)/misc/stopwords.txt -D delimiters=/$(HDFS)/misc/delimiters.txt -D N=5 /user/adampap/psso/titles /$(HDFS)/C-output
 	@echo "Run the following command to read the output file:"
 	@echo "hdfs dfs -cat /$(HDFS)/C-output/part*"
 

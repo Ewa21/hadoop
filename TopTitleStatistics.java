@@ -23,10 +23,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.lang.Integer;
-import java.util.Arrays;
-import java.util.List;
-import java.util.StringTokenizer;
-import java.util.TreeSet;
+import java.util.*;
 
 // Don't Change >>>
 public class TopTitleStatistics extends Configured implements Tool {
@@ -39,7 +36,7 @@ public class TopTitleStatistics extends Configured implements Tool {
     public int run(String[] args) throws Exception {
         Configuration conf = this.getConf();
         FileSystem fs = FileSystem.get(conf);
-        Path tmpPath = new Path("/mp2/tmp");
+        Path tmpPath = new Path("./mp2/tmp");
         fs.delete(tmpPath, true);
 
         Job jobA = Job.getInstance(conf, "Title Count");
@@ -48,7 +45,7 @@ public class TopTitleStatistics extends Configured implements Tool {
 
         jobA.setMapperClass(TitleCountMap.class);
         jobA.setReducerClass(TitleCountReduce.class);
-	jobA.setNumReduceTasks(2);
+        jobA.setNumReduceTasks(2);
 
         FileInputFormat.setInputPaths(jobA, new Path(args[0]));
         FileOutputFormat.setOutputPath(jobA, tmpPath);
@@ -77,15 +74,15 @@ public class TopTitleStatistics extends Configured implements Tool {
         return jobB.waitForCompletion(true) ? 0 : 1;
     }
 
-    public static String readHDFSFile(String path, Configuration conf) throws IOException{
-        Path pt=new Path(path);
+    public static String readHDFSFile(String path, Configuration conf) throws IOException {
+        Path pt = new Path(path);
         FileSystem fs = FileSystem.get(pt.toUri(), conf);
         FSDataInputStream file = fs.open(pt);
-        BufferedReader buffIn=new BufferedReader(new InputStreamReader(file));
+        BufferedReader buffIn = new BufferedReader(new InputStreamReader(file));
 
         StringBuilder everything = new StringBuilder();
         String line;
-        while( (line = buffIn.readLine()) != null) {
+        while ((line = buffIn.readLine()) != null) {
             everything.append(line);
             everything.append("\n");
         }
@@ -113,7 +110,7 @@ public class TopTitleStatistics extends Configured implements Tool {
         String delimiters;
 
         @Override
-        protected void setup(Context context) throws IOException,InterruptedException {
+        protected void setup(Context context) throws IOException, InterruptedException {
 
             Configuration conf = context.getConfiguration();
 
@@ -127,63 +124,117 @@ public class TopTitleStatistics extends Configured implements Tool {
 
         @Override
         public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
-            // TODO
+            String line = value.toString();
+            StringTokenizer tokenizer = new StringTokenizer(line, delimiters);
+            while (tokenizer.hasMoreTokens()) {
+                String nextToken = tokenizer.nextToken().trim().toLowerCase();
+                if (!stopWords.contains(nextToken)) {
+                    context.write(new Text(nextToken), new IntWritable(1));
+                }
+            }
         }
     }
 
-    public static class TitleCountReduce extends Reducer<Text, IntWritable, Text, IntWritable> {
-        @Override
-        public void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
-            // TODO
+            public static class TitleCountReduce extends Reducer<Text, IntWritable, Text, IntWritable> {
+                @Override
+                public void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
+                    int sum = 0;
+                    for (IntWritable val : values) {
+                        sum += val.get();
+                    }
+                    context.write(key, new IntWritable(sum));
+                }
+            }
+
+
+        public static class TopTitlesStatMap extends Mapper<Text, Text, NullWritable, TextArrayWritable> {
+            Integer N;
+            private NullWritable nullValue = NullWritable.get();
+            private TreeMap<Integer, String> tmap;
+
+            @Override
+            protected void setup(Context context) throws IOException, InterruptedException {
+                Configuration conf = context.getConfiguration();
+                this.N = conf.getInt("N", 10);
+                tmap = new TreeMap<Integer, String>();
+            }
+
+            @Override
+            public void map(Text key, Text value, Context context) throws IOException, InterruptedException {
+                String name = key.toString();
+                String valueLine = value.toString();
+                Integer valueInt = Integer.valueOf(valueLine);
+                tmap.put(valueInt, name);
+
+                if (tmap.size() > N) {
+                    tmap.remove(tmap.firstKey());
+                }
+            }
+
+            @Override
+            protected void cleanup(Context context) throws IOException, InterruptedException {
+                for (Map.Entry<Integer, String> entry : tmap.entrySet()) {
+                    Integer count = entry.getKey();
+                    String name = entry.getValue();
+
+                    String[] tab = new String[2];
+                    tab[0] = name;
+                    tab[1] = String.valueOf(count);
+                    context.write(nullValue, new TextArrayWritable(tab));
+                }
+            }
+        }
+
+        public static class TopTitlesStatReduce extends Reducer<NullWritable, TextArrayWritable, Text, IntWritable> {
+            Integer N;
+            private TreeMap<Integer, String> tmap;
+
+            @Override
+            protected void setup(Context context) throws IOException, InterruptedException {
+                Configuration conf = context.getConfiguration();
+                this.N = conf.getInt("N", 10);
+                tmap = new TreeMap<Integer, String>();
+            }
+
+            @Override
+            public void reduce(NullWritable key, Iterable<TextArrayWritable> values, Context context) throws IOException, InterruptedException {
+                Integer sum, mean, max, min, var;
+
+                for (TextArrayWritable val : values) {
+                    String count = val.get()[1].toString();
+                    String name = val.get()[0].toString();
+                    Integer count_value = Integer.valueOf(count);
+
+                    tmap.put(count_value, name);
+
+                    if (tmap.size() > N) {
+                        tmap.remove(tmap.firstKey());
+                    }
+                }
+                sum = 0;
+
+                for (Map.Entry<Integer, String> entry : tmap.entrySet()) {
+                    sum += entry.getKey();
+                }
+                mean = sum / N;
+                min = tmap.firstKey();
+                max = tmap.lastKey();
+                var = 0;
+
+                for (Map.Entry<Integer, String> entry : tmap.entrySet()) {
+                    var += (mean - entry.getKey()) * (mean - entry.getKey());
+                }
+                var /= N;
+
+                context.write(new Text("Mean"), new IntWritable(mean));
+                context.write(new Text("Sum"), new IntWritable(sum));
+                context.write(new Text("Min"), new IntWritable(min));
+                context.write(new Text("Max"), new IntWritable(max));
+                context.write(new Text("Var"), new IntWritable(var));
+            }
         }
     }
 
-    public static class TopTitlesStatMap extends Mapper<Text, Text, NullWritable, TextArrayWritable> {
-        Integer N;
-        // TODO
-
-        @Override
-        protected void setup(Context context) throws IOException,InterruptedException {
-            Configuration conf = context.getConfiguration();
-            this.N = conf.getInt("N", 10);
-        }
-
-        @Override
-        public void map(Text key, Text value, Context context) throws IOException, InterruptedException {
-            // TODO
-        }
-
-        @Override
-        protected void cleanup(Context context) throws IOException, InterruptedException {
-            // TODO
-        }
-    }
-
-    public static class TopTitlesStatReduce extends Reducer<NullWritable, TextArrayWritable, Text, IntWritable> {
-        Integer N;
-        // TODO
-
-        @Override
-        protected void setup(Context context) throws IOException,InterruptedException {
-            Configuration conf = context.getConfiguration();
-            this.N = conf.getInt("N", 10);
-        }
-
-        @Override
-        public void reduce(NullWritable key, Iterable<TextArrayWritable> values, Context context) throws IOException, InterruptedException {
-            Integer sum, mean, max, min, var;
-
-            // TODO
-
-            context.write(new Text("Mean"), new IntWritable(mean));
-            context.write(new Text("Sum"), new IntWritable(sum));
-            context.write(new Text("Min"), new IntWritable(min));
-            context.write(new Text("Max"), new IntWritable(max));
-            context.write(new Text("Var"), new IntWritable(var));
-        }
-    }
-
-}
 
 // >>> Don't Change
 class Pair<A extends Comparable<? super A>,

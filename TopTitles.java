@@ -1,3 +1,4 @@
+import com.google.common.collect.Lists;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -5,10 +6,7 @@ import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.ArrayWritable;
-import org.apache.hadoop.io.IntWritable;
-import org.apache.hadoop.io.NullWritable;
-import org.apache.hadoop.io.Text;
+import org.apache.hadoop.io.*;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
@@ -22,10 +20,7 @@ import org.apache.hadoop.util.ToolRunner;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.util.Arrays;
-import java.util.List;
-import java.util.StringTokenizer;
-import java.util.TreeSet;
+import java.util.*;
 
 // >>> Don't Change
 public class TopTitles extends Configured implements Tool {
@@ -39,7 +34,7 @@ public class TopTitles extends Configured implements Tool {
     public int run(String[] args) throws Exception {
         Configuration conf = this.getConf();
         FileSystem fs = FileSystem.get(conf);
-        Path tmpPath = new Path("/mp2/tmp");
+        Path tmpPath = new Path("./mp2/tmp.");
         fs.delete(tmpPath, true);
 
         Job jobA = Job.getInstance(conf, "Title Count");
@@ -127,51 +122,107 @@ public class TopTitles extends Configured implements Tool {
 
         @Override
         public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
-        // TODO
+			String line = value.toString();
+            StringTokenizer tokenizer = new StringTokenizer(line, delimiters);
+            while (tokenizer.hasMoreTokens()) {
+                String nextToken = tokenizer.nextToken().trim().toLowerCase();
+                if (!stopWords.contains(nextToken)) {
+                    context.write(new Text(nextToken), new IntWritable(1));
+                }
+            }
         }
     }
 
     public static class TitleCountReduce extends Reducer<Text, IntWritable, Text, IntWritable> {
         @Override
         public void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
-            // TODO
+            int sum = 0;
+            for (IntWritable val : values) {
+                sum += val.get();
+            }
+            context.write(key, new IntWritable(sum));
         }
     }
 
     public static class TopTitlesMap extends Mapper<Text, Text, NullWritable, TextArrayWritable> {
         Integer N;
-        // TODO
+		private NullWritable nullValue = NullWritable.get();
+		private TreeMap<Integer, String> tmap;
 
         @Override
         protected void setup(Context context) throws IOException,InterruptedException {
             Configuration conf = context.getConfiguration();
             this.N = conf.getInt("N", 10);
+			tmap = new TreeMap<Integer, String>();
         }
 
         @Override
         public void map(Text key, Text value, Context context) throws IOException, InterruptedException {
-            // TODO
+			String name = key.toString();
+			String valueLine = value.toString();
+			Integer valueInt = Integer.valueOf(valueLine);
+			tmap.put(valueInt, name);
+			
+			if (tmap.size() > N) 
+			{ 
+				tmap.remove(tmap.firstKey()); 
+			} 
         }
 
         @Override
         protected void cleanup(Context context) throws IOException, InterruptedException {
             // TODO
+			
+			for (Map.Entry<Integer, String> entry : tmap.entrySet())  
+        { 
+  
+            Integer count = entry.getKey(); 
+            String name = entry.getValue(); 
+
+            String[] tab = new String[2];
+            tab[0]= name;
+            tab[1] = String.valueOf(count);
+            context.write(nullValue, new TextArrayWritable(tab));
+        } 
         }
     }
 
     public static class TopTitlesReduce extends Reducer<NullWritable, TextArrayWritable, Text, IntWritable> {
         Integer N;
-        // TODO
+        private TreeMap<Integer, String> tmap;
 
         @Override
         protected void setup(Context context) throws IOException,InterruptedException {
             Configuration conf = context.getConfiguration();
             this.N = conf.getInt("N", 10);
+            tmap = new TreeMap<Integer, String>();
         }
 
         @Override
         public void reduce(NullWritable key, Iterable<TextArrayWritable> values, Context context) throws IOException, InterruptedException {
-            // TODO
+
+            for (TextArrayWritable val : values) {
+                String count = val.get()[1].toString();
+                String name = val.get()[0].toString();
+                Integer count_value = Integer.valueOf(count);
+
+                tmap.put(count_value, name);
+
+                if (tmap.size() > N)
+                {
+                    tmap.remove(tmap.firstKey());
+                }
+            }
+        }
+
+        @Override
+        protected void cleanup(Context context) throws IOException, InterruptedException {
+            for (Map.Entry<Integer, String> entry : tmap.entrySet())
+            {
+                Integer count = entry.getKey();
+                String name = entry.getValue();
+                context.write(new Text(name),new IntWritable(count));
+            }
         }
     }
 
