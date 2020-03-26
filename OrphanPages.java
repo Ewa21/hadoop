@@ -1,5 +1,6 @@
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.NullWritable;
@@ -26,20 +27,53 @@ public class OrphanPages extends Configured implements Tool {
 
     @Override
     public int run(String[] args) throws Exception {
-        //TODO
+        Job job = Job.getInstance(this.getConf(), "OrphanPages");
+        job.setOutputKeyClass(IntWritable.class);
+        job.setOutputValueClass(NullWritable.class);
+
+        job.setMapOutputKeyClass(IntWritable.class);
+        job.setMapOutputValueClass(IntWritable.class);
+
+        job.setMapperClass(LinkCountMap.class);
+        job.setReducerClass(OrphanPageReduce.class);
+
+        FileInputFormat.setInputPaths(job, new Path(args[0]));
+        FileOutputFormat.setOutputPath(job, new Path(args[1]));
+
+        job.setJarByClass(OrphanPages.class);
+        return job.waitForCompletion(true) ? 0 : 1;
     }
 
     public static class LinkCountMap extends Mapper<Object, Text, IntWritable, IntWritable> {
         @Override
         public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
-            //TODO
+            String line = value.toString();
+            StringTokenizer tokenizer = new StringTokenizer(line, " ");
+            while (tokenizer.hasMoreTokens()) {
+                String nextToken = tokenizer.nextToken().trim();
+                if (!nextToken.contains(":")) {
+                    context.write(new IntWritable(Integer.valueOf(nextToken)), new IntWritable(1));
+                }
+                else{
+                    nextToken = nextToken.replace(":","");
+                    context.write(new IntWritable(Integer.valueOf(nextToken)), new IntWritable(0));
+                }
+            }
         }
     }
+
 
     public static class OrphanPageReduce extends Reducer<IntWritable, IntWritable, IntWritable, NullWritable> {
         @Override
         public void reduce(IntWritable key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
-            //TODO
+            int sum = 0;
+            for (IntWritable val : values) {
+                sum += val.get();
+            }
+            if(sum==0) {
+                NullWritable nullValue = NullWritable.get();
+                context.write(key, nullValue);
+            }
         }
     }
 }
